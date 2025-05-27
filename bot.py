@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from transformers import pipeline
+import torch
 
 # Load environment variables
 load_dotenv()
@@ -12,8 +13,17 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# Load the summarization pipeline (this will download the model the first time)
-summarizer = pipeline("summarization", model="t5-small")  # or "facebook/bart-base"
+# Load the summarization pipeline with memory optimizations
+summarizer = pipeline(
+    "summarization",
+    model="facebook/bart-large-cnn",  # Using a more efficient model
+    device=0 if torch.cuda.is_available() else -1,  # Use GPU if available
+    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32  # Use half precision if GPU available
+)
+
+# Clear CUDA cache if available
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
 
 @bot.event
 async def on_ready():
@@ -51,10 +61,14 @@ Example: `!tldr 10` will summarize the last 10 messages in the channel.
     await ctx.send(help_text)
 
 def summarize_text(text, max_length=60, min_length=10):
-    # Hugging Face models have a max input length (e.g., 512 tokens for t5-small)
-    # If the text is too long, you may want to truncate or split it
+    # Hugging Face models have a max input length
     if len(text) > 1000:
         text = text[:1000]
+    
+    # Clear CUDA cache before summarization if available
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        
     summary = summarizer(text, max_length=max_length, min_length=min_length, do_sample=False)
     return summary[0]['summary_text']
 
